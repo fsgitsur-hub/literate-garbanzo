@@ -1,5 +1,5 @@
 -- ============================================================
---  TIMEBOMB DUELS - FULL v21
+--  TIMEBOMB DUELS - FULL v22
 -- ============================================================
 print(">>> Loading...")
 
@@ -32,7 +32,6 @@ ibg.Size = UDim2.new(1,0,1,0)
 ibg.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 ibg.BorderSizePixel = 0
 
--- ✅ كرات كبيرة ملونة
 task.spawn(function()
     while ibg.Parent do
         local size = math.random(20, 45)
@@ -60,7 +59,6 @@ task.spawn(function()
     end
 end)
 
--- الشعار الرئيسي
 local logo = Instance.new("TextLabel", ibg)
 logo.Size = UDim2.new(1,0,0,80)
 logo.Position = UDim2.new(0,0,0.33,0)
@@ -79,7 +77,6 @@ lgrad.Color = ColorSequence.new{
     ColorSequenceKeypoint.new(1, Color3.fromRGB(250, 230, 130)),
 }
 
--- النص العربي
 local arabicText = Instance.new("TextLabel", ibg)
 arabicText.Size = UDim2.new(1,0,0,50)
 arabicText.Position = UDim2.new(0,0,0.42,0)
@@ -99,7 +96,6 @@ agrad.Color = ColorSequence.new{
 }
 agrad.Rotation = 30
 
--- دوران التدرجات
 task.spawn(function()
     while ibg.Parent do
         lgrad.Rotation = (lgrad.Rotation + 2) % 360
@@ -108,7 +104,6 @@ task.spawn(function()
     end
 end)
 
--- شريط التحميل
 local barBG = Instance.new("Frame", ibg)
 barBG.Size = UDim2.new(0,360,0,10)
 barBG.Position = UDim2.new(0.5,-180,0.58,10)
@@ -215,7 +210,6 @@ task.spawn(function()
     print(">>> GUI enabled!")
 end)
 
--- تايمر أمان
 task.delay(6, function()
     if intro and intro.Parent then intro:Destroy() end
     if gui then gui.Enabled = true end
@@ -1280,6 +1274,9 @@ UIS.InputEnded:Connect(function(input)
     end
 end)
 
+-- متغير BodyVelocity للهروب
+local escapeBV = nil
+
 escapeCircle.MouseButton1Click:Connect(function()
     if ecMoved then return end
     smartEscapeOn = not smartEscapeOn
@@ -1291,21 +1288,27 @@ escapeCircle.MouseButton1Click:Connect(function()
         escapeCircle.BackgroundColor3 = Color3.fromRGB(50, 90, 130)
         ecStroke.Color = Color3.fromRGB(120, 180, 240)
         print(">>> Smart Escape OFF")
+
+        -- ✅ نظّف BodyVelocity
+        if escapeBV and escapeBV.Parent then
+            escapeBV:Destroy()
+            escapeBV = nil
+        end
+
+        -- ✅ رجّع حالة الريتش (بدل شفافية 0 للكل)
         for _, plr in ipairs(Players:GetPlayers()) do
             if plr ~= LP and plr.Character then
-                for _, part in ipairs(plr.Character:GetDescendants()) do
-                    if part:IsA("BasePart") then
-                        pcall(function() part.LocalTransparencyModifier = 0 end)
-                    end
-                    if part:IsA("Decal") or part:IsA("Texture") then
-                        pcall(function() part.Transparency = 0 end)
-                    end
+                if comboOn then
+                    applyCombo(plr.Character, ritchScale)
+                else
+                    cleanupCharacter(plr.Character)
                 end
             end
         end
-        local myChar = LP.Character
-        if myChar then
-            for _, part in ipairs(myChar:GetDescendants()) do
+
+        -- رجّع شفافية جسمي
+        if LP.Character then
+            for _, part in ipairs(LP.Character:GetDescendants()) do
                 if part:IsA("BasePart") then
                     pcall(function() part.LocalTransparencyModifier = 0 end)
                 end
@@ -1314,68 +1317,105 @@ escapeCircle.MouseButton1Click:Connect(function()
     end
 end)
 
--- نظام الهروب الذكي
-task.spawn(function()
-    while task.wait() do
-        if smartEscapeOn and LP.Character then
-            pcall(function()
-                local char = LP.Character
-                local hrp = char:FindFirstChild("HumanoidRootPart")
-                if not hrp then return end
+-- ✅ نظام الهروب الذكي (Raycast + دفع قوي)
+local function getWallPush(hrp)
+    local origin = hrp.Position
+    local rayParams = RaycastParams.new()
+    rayParams.FilterDescendantsInstances = {LP.Character}
+    rayParams.FilterType = Enum.RaycastFilterType.Exclude
 
-                for _, plr in ipairs(Players:GetPlayers()) do
-                    if plr ~= LP and plr.Character then
-                        for _, part in ipairs(plr.Character:GetDescendants()) do
-                            if part:IsA("BasePart") then
-                                pcall(function() part.LocalTransparencyModifier = 1 end)
-                            end
-                            if part:IsA("Decal") or part:IsA("Texture") then
-                                pcall(function() part.Transparency = 1 end)
-                            end
-                        end
-                    end
-                end
+    local pushVec = Vector3.zero
+    local rayLen = 8
 
-                for _, part in ipairs(char:GetDescendants()) do
-                    if part:IsA("BasePart") then
-                        pcall(function() part.LocalTransparencyModifier = 0.6 end)
-                    end
-                end
+    local dirs = {
+        hrp.CFrame.LookVector,
+        -hrp.CFrame.LookVector,
+        hrp.CFrame.RightVector,
+        -hrp.CFrame.RightVector,
+    }
 
-                local nearest, minDist = nil, math.huge
-                for _, plr in ipairs(Players:GetPlayers()) do
-                    if plr ~= LP and plr.Character then
-                        local oHrp = plr.Character:FindFirstChild("HumanoidRootPart")
-                        if oHrp then
-                            local d = (oHrp.Position - hrp.Position).Magnitude
-                            if d < minDist then minDist = d; nearest = oHrp end
-                        end
-                    end
-                end
-
-                if nearest and minDist < escapeDistance then
-                    local pushDir = hrp.Position - nearest.Position
-                    if pushDir.Magnitude > 0.1 then
-                        pushDir = pushDir.Unit
-                        local pushAmount = 4 + (escapeDistance - minDist) * 0.8
-                        if pushAmount > 12 then pushAmount = 12 end
-                        hrp.CFrame = hrp.CFrame + (pushDir * pushAmount)
-                        local bv = hrp:FindFirstChild("_EscapeBV")
-                        if not bv then
-                            bv = Instance.new("BodyVelocity")
-                            bv.Name = "_EscapeBV"
-                            bv.MaxForce = Vector3.new(1e5, 0, 1e5)
-                            bv.P = 5000
-                            bv.Parent = hrp
-                        end
-                        bv.Velocity = pushDir * 80
-                        task.delay(0.15, function()
-                            if bv and bv.Parent then bv:Destroy() end
-                        end)
-                    end
-                end
-            end)
+    for _, dir in ipairs(dirs) do
+        local hit = workspace:Raycast(origin, dir * rayLen, rayParams)
+        if hit then
+            pushVec = pushVec - dir
         end
+    end
+
+    return pushVec
+end
+
+local function runSmartEscape()
+    local char = LP.Character
+    if not char then return end
+    local hrp = char:FindFirstChild("HumanoidRootPart")
+    if not hrp then return end
+
+    for _, plr in ipairs(Players:GetPlayers()) do
+        if plr ~= LP and plr.Character then
+            for _, part in ipairs(plr.Character:GetDescendants()) do
+                if part:IsA("BasePart") then
+                    pcall(function() part.LocalTransparencyModifier = 1 end)
+                end
+                if part:IsA("Decal") or part:IsA("Texture") then
+                    pcall(function() part.Transparency = 1 end)
+                end
+            end
+        end
+    end
+
+    for _, part in ipairs(char:GetDescendants()) do
+        if part:IsA("BasePart") then
+            pcall(function() part.LocalTransparencyModifier = 0.7 end)
+        end
+    end
+
+    local nearest, minDist = nil, math.huge
+    for _, plr in ipairs(Players:GetPlayers()) do
+        if plr ~= LP and plr.Character then
+            local oHrp = plr.Character:FindFirstChild("HumanoidRootPart")
+            if oHrp then
+                local d = (oHrp.Position - hrp.Position).Magnitude
+                if d < minDist then minDist = d; nearest = oHrp end
+            end
+        end
+    end
+
+    local enemyPush = Vector3.zero
+    if nearest and minDist < escapeDistance then
+        local diff = hrp.Position - nearest.Position
+        if diff.Magnitude > 0.1 then
+            local strength = (escapeDistance - minDist) / escapeDistance
+            enemyPush = diff.Unit * (1 + strength * 3)
+        end
+    end
+
+    local wallPush = getWallPush(hrp)
+
+    local totalPush = enemyPush * 1.5 + wallPush * 1.8
+
+    if totalPush.Magnitude > 0.05 then
+        totalPush = totalPush.Unit
+
+        hrp.CFrame = hrp.CFrame + totalPush * 20
+
+        if not escapeBV or not escapeBV.Parent then
+            escapeBV = Instance.new("BodyVelocity")
+            escapeBV.Name = "_EscapeBV"
+            escapeBV.MaxForce = Vector3.new(1e6, 0, 1e6)
+            escapeBV.P = 15000
+            escapeBV.Parent = hrp
+        end
+        escapeBV.Velocity = totalPush * 300
+    else
+        if escapeBV and escapeBV.Parent then
+            escapeBV.Velocity = Vector3.zero
+        end
+    end
+end
+
+RunService.Heartbeat:Connect(function()
+    if smartEscapeOn and LP.Character then
+        pcall(runSmartEscape)
     end
 end)
 
@@ -1455,21 +1495,21 @@ escapeBtn.MouseButton1Click:Connect(function()
             smartEscapeOn = false
             escapeCircle.BackgroundColor3 = Color3.fromRGB(50, 90, 130)
             ecStroke.Color = Color3.fromRGB(120, 180, 240)
+            if escapeBV and escapeBV.Parent then
+                escapeBV:Destroy()
+                escapeBV = nil
+            end
             for _, plr in ipairs(Players:GetPlayers()) do
                 if plr ~= LP and plr.Character then
-                    for _, part in ipairs(plr.Character:GetDescendants()) do
-                        if part:IsA("BasePart") then
-                            pcall(function() part.LocalTransparencyModifier = 0 end)
-                        end
-                        if part:IsA("Decal") or part:IsA("Texture") then
-                            pcall(function() part.Transparency = 0 end)
-                        end
+                    if comboOn then
+                        applyCombo(plr.Character, ritchScale)
+                    else
+                        cleanupCharacter(plr.Character)
                     end
                 end
             end
-            local myChar = LP.Character
-            if myChar then
-                for _, part in ipairs(myChar:GetDescendants()) do
+            if LP.Character then
+                for _, part in ipairs(LP.Character:GetDescendants()) do
                     if part:IsA("BasePart") then
                         pcall(function() part.LocalTransparencyModifier = 0 end)
                     end
